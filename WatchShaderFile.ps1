@@ -93,6 +93,8 @@ function CopyFile($source, $target)
       }
    }
 
+   $CopyShaderFile[$sourcePath] = $modifiedDate
+
    $file = $target.Items() | Where-Object { $_.Name -eq $sourceFileName }
    if ($null -ne $file)
    {
@@ -104,13 +106,13 @@ function CopyFile($source, $target)
       if ($null -ne $file)
       {
          # the 0x10 flag (overwrite) on CopyHere doesn't work, so... delete the file manually if it exists (gives a warning)
+         Write-Host "File '$sourceFileName' exists in the Pending folder, deleting (confirmation dialog will be displayed)"
          $file.InvokeVerb("Delete")
       }
    }
 
    Write-Host "Copying '$sourcePath' to '$targetDir'"
    $target.CopyHere($source)
-   $CopyShaderFile[$sourcePath] = $modifiedDate
    Write-Host "$sourceFileName modified date: $modifiedDate"
 }
 
@@ -121,7 +123,10 @@ if ($args.Count -eq 2)
 }
 
 
-$scriptPath = $MyInvocation.MyCommand.Definition
+# keep these in scope for the file watcher's execution of WatchShaderFile.ps1
+$global:scriptPath = $MyInvocation.MyCommand.Definition
+$global:sourceFolderPath = Split-Path $sourcePath -Parent
+$global:sourceFileName = Split-Path $sourcePath -Leaf
 
 if ($args[0] -eq "unregister")
 {
@@ -138,6 +143,7 @@ if ($false)
 
 UnRegisterEventSubscriber $scriptPath
 
-Write-Host "Registering FileChanged event subscriber to run $scriptPath..."
+Write-Host "Registering FileChanged event subscriber to watch '$sourceFilename' in '$sourceFolderPath'"
+Write-Host "and run '$scriptPath' when it changes..."
 $fsw = New-Object System.IO.FileSystemWatcher (Split-Path $sourcePath -Parent), (Split-Path $sourcePath -Leaf) 
 Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath $sourcePath $targetDir } > $null
