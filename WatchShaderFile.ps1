@@ -1,5 +1,29 @@
+# Watches $sourcePath with a file watcher, runs itself with this path and $targetDir 
+# to copy the source to the Shader folder on the target. Since the tablet can't be 
+# mounted, we use a Shell.Application COM object to find the target folder and perform
+# the copy. Since the flags on the CopyHere method don't work, we can't force the 
+# COM object to overwrite the file without a confirmation doalog, so we copy to a
+# Pending folder instead with the understanding that the Android app consuming the 
+# target file will first move it from the Pending folder to the Shaders folder. Note 
+# that the copy goes to the Shaders folder if a previous version of the target file 
+# doesn't exist, else to the Pending folder. Folders are created as necessary. 
+
 $targetDir = "Bryan's Galaxy Tab S3\Card\Android\data\com.nfidev.InstantPhotoBooth4\files"
 $sourcePath = "C:\temp\IPB4\FragmentShader.fsh"
+
+
+function UnRegisterEventSubscriber($scriptPath)
+{
+   $existing = Get-EventSubscriber
+   if ($null -ne $existing)
+   {
+      if ($existing.Action.Command.Trim() -eq "&`$scriptPath `$sourcePath `$targetDir")
+      {
+         Write-Host "Unregistering existing FileChanged event subscriber..."
+         $existing | Unregister-Event
+      }
+   }
+}
 
 function GetDirectory($here, $directory)
 {
@@ -96,23 +120,24 @@ if ($args.Count -eq 2)
    return
 }
 
+
+$scriptPath = $MyInvocation.MyCommand.Definition
+
+if ($args[0] -eq "unregister")
+{
+   UnRegisterEventSubscriber $scriptPath
+   return
+}
+
 if ($false)
 {
-   # test
+   # test in debugger
    CopyFile $sourcePath $targetDir
    return
 }
 
-$existing = Get-EventSubscriber
-if ($null -ne $existing)
-{
-   if ($existing.Action.Command.Trim() -eq "C:\temp\IPB4\CopyShader.ps1 `$sourcePath `$targetDir")
-   {
-      Write-Host "Unregistering existing FileChanged event subscriber..."
-      $existing | Unregister-Event
-   }
-}
+UnRegisterEventSubscriber $scriptPath
 
-Write-Host "Registering FileChanged event subscriber..."
+Write-Host "Registering FileChanged event subscriber to run $scriptPath..."
 $fsw = New-Object System.IO.FileSystemWatcher (Split-Path $sourcePath -Parent), (Split-Path $sourcePath -Leaf) 
-Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { C:\temp\IPB4\CopyShader.ps1 $sourcePath $targetDir } > $null
+Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath $sourcePath $targetDir } > $null
