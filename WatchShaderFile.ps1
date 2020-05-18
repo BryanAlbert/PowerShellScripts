@@ -8,6 +8,17 @@
 # that the copy goes to the Shaders folder if a previous version of the target file 
 # doesn't exist, else to the Pending folder. Folders are created as necessary. 
 
+# If the file exists in the Pending folder (because the consumer hasn't moved it), we 
+# invoke the shell application's Delete verb on the file which will issue a confirmation 
+# dialog. since the file watcher can handle the FileChanged event multimple times, we 
+# maintain a global hash with the target file path and ModifyDate and do nothing when 
+# the file hasn't changed.
+
+# Note that if the source file is modified in Visual Studio, this script won't work 
+# because VS doesn't actually modify the file. Visual Studio Code does, though. 
+
+# TODO: make it work with Visual Studio (watch for file creation?).
+
 $targetDir = "Bryan's Galaxy Tab S3\Card\Android\data\com.nfidev.InstantPhotoBooth4\files"
 $sourcePath = "C:\temp\IPB4\FragmentShader.fsh"
 
@@ -147,3 +158,5 @@ Write-Host "Registering FileChanged event subscriber to watch '$sourceFilename' 
 Write-Host "and run '$scriptPath' when it changes..."
 $fsw = New-Object System.IO.FileSystemWatcher (Split-Path $sourcePath -Parent), (Split-Path $sourcePath -Leaf) 
 Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath $sourcePath $targetDir } > $null
+
+Write-Host "Run with the 'unregister' command to turn off the file watcher."
