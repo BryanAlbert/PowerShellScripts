@@ -12,7 +12,7 @@
 # TODO: make it work with Visual Studio (watch for file creation?).
 
 
-param([switch] $Unregister)
+param([switch] $Unregister, [switch] $Status)
 
 
 $targetDir = "Bryan's Galaxy Tab S3\Card\Android\data\com.nfidev.InstantPhotoBooth4\files"
@@ -186,9 +186,21 @@ $global:scriptPath = $MyInvocation.MyCommand.Definition
 $global:sourceFolderPath = Split-Path $sourcePath -Parent
 $global:sourceFileName = Split-Path $sourcePath -Leaf
 
+
 if ($Unregister)
 {
    UnRegisterEventSubscriber $scriptPath
+   exit 0
+}
+
+if ($Status)
+{
+   Write-Host "Registered Action.Comand for FileChanged event:"
+   Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object{ $_.Action.Command }
+   Write-Host "Script `$scriptPath: $scriptPath"
+   Write-Host "Source: `$sourcePath: $sourcePath"
+   Write-Host "Target: `$targetDir: $targetDir"
+   Write-Host "Current modified date for '$($CopyShaderFile.Keys)': $($CopyShaderFile[$CopyShaderFile.Keys])"
    exit 0
 }
 
@@ -198,6 +210,7 @@ if ($false)
    CopyFile $sourcePath $targetDir
    return
 }
+
 
 UnRegisterEventSubscriber $scriptPath
 
