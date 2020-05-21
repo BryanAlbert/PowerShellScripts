@@ -195,12 +195,20 @@ if ($Unregister)
 
 if ($Status)
 {
-   Write-Host "Registered Action.Comand for FileChanged event:"
-   Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object{ $_.Action.Command }
-   Write-Host "Script `$scriptPath: $scriptPath"
-   Write-Host "Source: `$sourcePath: $sourcePath"
-   Write-Host "Target: `$targetDir: $targetDir"
-   Write-Host "Current modified date for '$($CopyShaderFile.Keys)': $($CopyShaderFile[$CopyShaderFile.Keys])"
+   $subscriber = Get-EventSubscriber
+   if ($null -ne $subscriber)
+   {
+      Write-Host "Registered Action.Comand for FileChanged event:"
+      Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object{ $_.Action.Command }
+      Write-Host "Script `$scriptPath: $scriptPath"
+      Write-Host "Source: `$sourcePath: $sourcePath"
+      Write-Host "Target: `$targetDir: $targetDir"
+      Write-Host "Current modified date for '$($CopyShaderFile.Keys)': $($CopyShaderFile[$CopyShaderFile.Keys])"
+   }
+   else
+   {
+      Write-Host "No event subscribers registered."
+   }
    exit 0
 }
 
