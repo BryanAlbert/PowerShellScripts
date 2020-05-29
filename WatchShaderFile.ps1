@@ -62,6 +62,69 @@ function UnRegisterEventSubscriber
    $global:ShaderFileModifiedDate = $null;
 }
 
+function ShowStatus
+{
+   $subscriber = Get-EventSubscriber
+   if ($null -ne $subscriber)
+   {
+      Write-Host "Registered events for the FileChanged watcher:"
+      Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object `
+      {
+         $command = $_.Action.Command
+         Write-Host "Watching $($_.SourceObject.Filter) in: $($_.SourceObject.Path)"
+
+         if ($command.Contains("`$scriptPath"))
+         {
+            Write-Host "Action.Command is: $command"
+            if ($command.Contains("`$scriptPath")) { Write-Host "Script `$scriptPath: $scriptPath" }
+            if ($command.Contains("`$hlslSourceFolder")) { Write-Host "Source: `$hlslSourceFolder: $hlslSourceFolder" }
+            if ($command.Contains("`$fshSourcePath")) { Write-Host "Source: `$fshSourcePath: $fshSourcePath" }
+            if ($command.Contains("`$fshTargetFolder")) { Write-Host "Target: `$fshTargetFolder: $fshTargetFolder" }
+         }
+
+         if ($_.Action.JobStateInfo.State -eq "Running" -and $_.Action.Output.Count -gt 0)
+         {
+            # useful for figuring out error conditions
+            Write-Host "Command is running, Output: $($_.Action.Output)"
+         }
+      }
+
+      if ($null -ne $ShaderFileModifiedDate)
+      {
+         $ShaderFileModifiedDate.Keys | ForEach-Object `
+         {
+            Write-Host "Current modified date for '$($_)': $($ShaderFileModifiedDate[$_])"
+         }
+      }
+   }
+   else
+   {
+      Write-Host "No event subscribers registered"
+      Write-Host "Use -WatchHlsl to monitor hlsl files in $hlslSourceFolder (calls CompileShader.bat)"
+      Write-Host "Use -WatchFsh to monitor $fshSourcePath (copies it to '$fshTargetFolder\Shaders')"
+   }
+}
+function CheckModifiedDate($file, $date)
+{
+   # maintain a global hash contianing the file path and modified date (since ModifyDate on the FolderItem doesn't work)
+   if ($null -eq $ShaderFileModifiedDate)
+   {
+      $global:ShaderFileModifiedDate = @{}
+   }
+   else
+   {
+      # if called a second time (as file watcher tends to do) with the same file, return
+      if ($ShaderFileModifiedDate[$file] -eq $date)
+      {
+         Write-Host "(Possible spurious filewatcher message) $file modified date: $date has not changed, not processing"
+         return $false
+      }
+   }
+
+   $ShaderFileModifiedDate[$file] = $date
+   return $true
+}
+
 function GetDirectory($here, $directory)
 {
    $target = $here.Items() | Where-Object { $_.Name -eq $directory }
@@ -135,22 +198,10 @@ function CopyFshFile($source)
    $target = GetDirectory $target "Shaders"
    $fshTargetFolder = $fshTargetFolder + "\Shaders"
 
-   # maintain a global hash contianing the file path and modified date (since ModifyDate on the FolderItem doesn't work)
-   if ($null -eq $ShaderFileModifiedDate)
+   if (!(CheckModifiedDate $fshSourceFileName $modifiedDate))
    {
-      $global:ShaderFileModifiedDate = @{}
+      return
    }
-   else
-   {
-      # if called a second time (as file watcher tends to do) with the same file, return
-      if ($ShaderFileModifiedDate[$fshSourcePath] -eq $modifiedDate)
-      {
-         Write-Host "$fshSourceFileName modified date: $modifiedDate has not changed, not copying"
-         return
-      }
-   }
-
-   $ShaderFileModifiedDate[$fshSourcePath] = $modifiedDate
 
    $file = $target.Items() | Where-Object { $_.Name -eq $fshSourceFileName }
    if ($null -ne $file)
@@ -201,6 +252,11 @@ function CompileHlslFile($source)
 {
    if (Test-Path $source)
    {
+      if (!(CheckModifiedDate $source (Get-ChildItem $source).LastWriteTime))
+      {
+         return
+      }
+
       $target = $source -replace "hlsl", "bin"
       if (!(Test-Path $target) -or (Get-ChildItem $source).LastWriteTime -gt (Get-ChildItem $target).LastWriteTime)
       {
@@ -220,6 +276,11 @@ function CompileHlslFile($source)
    }
 }
 
+if ($Status)
+{
+   ShowStatus
+   exit 0
+}
 
 if ($Unregister)
 {
@@ -265,50 +326,13 @@ if ($WatchHlsl)
    exit 0
 }
 
-# test file copy call in debugger
+# test action in debugger
 if ($false)
 {
+   Write-Host "(Hard-coded to test CompileHlslFile code)"
    CompileHlslFile C:\Users\bryan\Source\repos\InstantPhotoBooth4\Effects.UWP\Shaders\AsciiArt.hlsl
    exit 0
 }
 
-# display status of the event subscriber
-$subscriber = Get-EventSubscriber
-if ($null -ne $subscriber)
-{
-   Write-Host "Registered events for the FileChanged watcher:"
-   Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object `
-   {
-      $command = $_.Action.Command
-      Write-Host "Watching $($_.SourceObject.Filter) in: $($_.SourceObject.Path)"
-
-      if ($command.Contains("`$scriptPath"))
-      {
-         Write-Host "Action.Command is: $command"
-         if ($command.Contains("`$scriptPath")) { Write-Host "Script `$scriptPath: $scriptPath" }
-         if ($command.Contains("`$hlslSourceFolder")) { Write-Host "Source: `$hlslSourceFolder: $hlslSourceFolder" }
-         if ($command.Contains("`$fshSourcePath")) { Write-Host "Source: `$fshSourcePath: $fshSourcePath" }
-         if ($command.Contains("`$fshTargetFolder")) { Write-Host "Target: `$fshTargetFolder: $fshTargetFolder" }
-      }
-
-      if ($_.Action.JobStateInfo.State -eq "Running" -and $_.Action.Output.Count -gt 0)
-      {
-         # useful for figuring out error conditions
-         Write-Host "Command is running, Output: $($_.Action.Output)"
-      }
-   }
-
-   if ($null -ne $ShaderFileModifiedDate)
-   {
-      $ShaderFileModifiedDate.Keys | ForEach-Object `
-      {
-         Write-Host "Current modified date for '$($_)': $($ShaderFileModifiedDate[$_])"
-      }
-   }
-}
-else
-{
-   Write-Host "No event subscribers registered"
-   Write-Host "Use -WatchHlsl to monitor hlsl files in $hlslSourceFolder (calls CompileShader.bat)"
-   Write-Host "Use -WatchFsh to monitor $fshSourcePath (copies it to '$fshTargetFolder\Shaders')"
-}
+# default action is to show status
+ShowStatus
