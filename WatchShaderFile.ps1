@@ -45,6 +45,8 @@ $global:hlslSourceFolder = "C:\Users\bryan\Source\repos\InstantPhotoBooth4\Effec
 # keep in the scope of our caller (global) since the event action command references it by name
 $global:scriptPath = $MyInvocation.MyCommand.Definition
 
+# the path to the shader file in the UWP app's LocalState folders, update with your own path
+$uwpShaderFilePath = "C:\Users\bryan\AppData\Local\Packages\4119f474-6e52-4081-b0bd-f14959d84c01_zy7gk4k2v4s0e\LocalState\ShaderFiles\FragmentShader.bin"
 
 function UnRegisterEventSubscriber
 {
@@ -104,6 +106,7 @@ function ShowStatus
       Write-Host "Use -WatchFsh to monitor $fshSourcePath (copies it to '$fshTargetFolder\Shaders')"
    }
 }
+
 function CheckModifiedDate($file, $date)
 {
    # maintain a global hash contianing the file path and modified date (since ModifyDate on the FolderItem doesn't work)
@@ -260,9 +263,24 @@ function CompileHlslFile($source)
       $target = $source -replace "hlsl", "bin"
       if (!(Test-Path $target) -or (Get-ChildItem $source).LastWriteTime -gt (Get-ChildItem $target).LastWriteTime)
       {
-         Write-Host "Compiling '$source' to $(Split-Path -Leaf $target)..."
+         $targetFileName = Split-Path -Leaf $target
+         Write-Host "Compiling '$source' to $targetFileName..."
          Push-Location (Split-Path -Parent $source)
          Start-Process $env:ComSpec "/C CompileShaders.bat $source" -Wait
+
+         # if the file is indended to be reloaded at runtime, copy to the app's LocalState folder
+         if ((Split-Path -Leaf $uwpShaderFilePath) -eq $targetFileName)
+         {
+            $folder = Split-Path -Parent $uwpShaderFilePath
+            if (!(Test-Path $folder))
+            {
+               mkdir $folder
+            }
+
+            Write-Host "Copying '$targetFileName' to: $uwpShaderFilePath"
+            Copy-Item $targetFileName $uwpShaderFilePath
+         }
+
          Pop-Location
       }
       else
@@ -330,7 +348,7 @@ if ($WatchHlsl)
 if ($false)
 {
    Write-Host "(Hard-coded to test CompileHlslFile code)"
-   CompileHlslFile C:\Users\bryan\Source\repos\InstantPhotoBooth4\Effects.UWP\Shaders\AsciiArt.hlsl
+   CompileHlslFile C:\Users\bryan\Source\repos\InstantPhotoBooth4\Effects.UWP\Shaders\FragmentShader.hlsl
    exit 0
 }
 
