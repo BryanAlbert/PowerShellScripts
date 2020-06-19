@@ -12,6 +12,14 @@
 # look for the file with the greatest number suvix and use that for its purposes.
 # We copy these files to the Pending folder in this case.
 #
+# Since the fsc.exe hlsl compiler requires the Developer Command Prompt, the
+# CompileShaders.bat (which this script calls) will call VsDevCmd.bat batch to
+# create that environment, as necessary. Since this takes time, the -WatchHlsl
+# process launches the Developer PowerShell for VS 2019 and configures the file
+# watcher from there. When CompileShaders.bat is then run by the file watcher in
+# that Developer Powershell envrionment, it doesn't have to wait for that environment
+# to be configured and runs more quickly.
+#
 # For changes to an hlsl file in the (hard-coded) Effects.UWP\Shaders folder, the
 # file watcher calls the script again with -HlslPath set to the path to the modified
 # hlsl file. In this case the script calls CompileShader.bat with the file name of
@@ -31,22 +39,27 @@ param([switch] $WatchFsh, [switch] $WatchHlsl, [switch] $Status, [switch] $Unreg
 # keep in the scope of our caller (global) since the event action command references it by name
 $global:fshTargetFolder = "Bryan's Galaxy Tab S3\Card\Android\data\com.nfidev.InstantPhotoBooth4\files"
 
-# the path to the source fsh file to watch, update with your own
+# the path to the source fsh file to watch, update with this with your own path
 # keep in the scope of our caller (global) since the event action command references it by name
 $global:fshSourcePath = "C:\temp\IPB4\FragmentShader.fsh"
 
 $fshSourceFolderPath = Split-Path $fshSourcePath -Parent
 $fshSourceFileName = Split-Path $fshSourcePath -Leaf
 
-# the path to the hlsl folder to watch, update with your own
+# the path to the hlsl folder to watch, update with this with your own path
 # keep in the scope of our caller (global) since the event action command references it by name
 $global:hlslSourceFolder = "C:\Users\bryan\Source\repos\InstantPhotoBooth4\Effects.UWP\Shaders"
 
 # keep in the scope of our caller (global) since the event action command references it by name
 $global:scriptPath = $MyInvocation.MyCommand.Definition
 
-# the path to the shader file in the UWP app's LocalState folders, update with your own path
-$uwpShaderFilePath = "C:\Users\bryan\AppData\Local\Packages\4119f474-6e52-4081-b0bd-f14959d84c01_zy7gk4k2v4s0e\LocalState\ShaderFiles\FragmentShader.bin"
+# the path to the shader file in the UWP app's LocalState folders, update with this with your own path
+$uwpShaderFilePath = "C:\Users\bryan\AppData\Local\Packages\4119f474-6e52-4081-b0bd-f14959d84c01_zy7gk4k2v4s0e" +
+   "\LocalState\ShaderFiles\FragmentShader.bin"
+
+# the path to PowerShell so that we can launch it in "Developer PowerShell for VS 2019" mode
+$powerShellPath = "C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
+
 
 function UnRegisterEventSubscriber
 {
@@ -102,8 +115,8 @@ function ShowStatus
    else
    {
       Write-Host "No event subscribers registered"
-      Write-Host "Use -WatchHlsl to monitor hlsl files in $hlslSourceFolder (calls CompileShader.bat)"
-      Write-Host "Use -WatchFsh to monitor $fshSourcePath (copies it to '$fshTargetFolder\Shaders')"
+      Write-Host "`nUse -WatchHlsl to monitor and compile (via CompileShader.bat) hlsl files in:`n$hlslSourceFolder"
+      Write-Host "`nUse -WatchFsh to monitor $fshSourcePath (when modified, copies it to:`n$fshTargetFolder\Shaders`n"
    }
 }
 
@@ -266,21 +279,22 @@ function CompileHlslFile($source)
          $targetFileName = Split-Path -Leaf $target
          Write-Host "Compiling '$source' to $targetFileName..."
          Push-Location (Split-Path -Parent $source)
-         Start-Process $env:ComSpec "/C CompileShaders.bat $source" -Wait
-
-         # if the file is indended to be reloaded at runtime, copy to the app's LocalState folder
-         if ((Split-Path -Leaf $uwpShaderFilePath) -eq $targetFileName)
+         $process = Start-Process -PassThru -Wait $env:ComSpec "/C CompileShaders.bat $source" 
+         if ($process.ExitCode -eq 0)
          {
-            $folder = Split-Path -Parent $uwpShaderFilePath
-            if (!(Test-Path $folder))
+            # if the file is to be reloaded at runtime (named FragmentShader.bin), copy to the app's LocalState folder
+            if ((Split-Path -Leaf $uwpShaderFilePath) -eq $targetFileName)
             {
-               mkdir $folder
+               $folder = Split-Path -Parent $uwpShaderFilePath
+               if (!(Test-Path $folder))
+               {
+                  mkdir $folder
+               }
+
+               Write-Host "Copying '$targetFileName' to: $uwpShaderFilePath"
+               Copy-Item $targetFileName $uwpShaderFilePath
             }
-
-            Write-Host "Copying '$targetFileName' to: $uwpShaderFilePath"
-            Copy-Item $targetFileName $uwpShaderFilePath
          }
-
          Pop-Location
       }
       else
@@ -309,6 +323,7 @@ if ($Unregister)
 if ($null -ne $HlslPath)
 {
    CompileHlslFile $HlslPath
+   Write-Host "`nTo exit file watching, type: exit <Enter>"
    exit 0
 }
 
@@ -322,7 +337,7 @@ if ($WatchFsh)
 {
    UnRegisterEventSubscriber
 
-   Write-Host "Registering FileChanged event subscriber to watch '$sourceFilename' in '$fshSourceFolderPath'"
+   Write-Host "Registering FileChanged event subscriber to watch '$sourceFilename' in:`n$fshSourceFolderPath"
    Write-Host "and when it changes run"
    Write-Host "`$scriptPath -FshSource `$fshSourcePath"
    $fsw = New-Object System.IO.FileSystemWatcher $fshSourceFolderPath, $sourceFilename
@@ -334,13 +349,29 @@ if ($WatchFsh)
 
 if ($WatchHlsl)
 {
-   UnRegisterEventSubscriber
+   if ($null -eq $env:WindowsSdkDir)
+   {
+      Write-Host "Launching Developer PowerShell for VS 2019..."
+      $command = "-NoExit &{Import-Module " +
+         "`"`"`"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7" +
+         "\Tools\Microsoft.VisualStudio.DevShell.dll`"`"`"; " +
+         "Enter-VsDevShell 95413e77; " +
+         "Push-Location $PWD; " +
+         ".\WatchShaderFile.ps1 -WatchHlsl" +
+         "}"
+      Start-Process $powerShellPath -ArgumentList $command
+   }
+   else
+   {
+      UnRegisterEventSubscriber
+   
+      Write-Host "`nRegistering FileChanged event subscriber to watch '*.hlsl' in:`n$hlslSourceFolder"
+      $fsw = New-Object System.IO.FileSystemWatcher $hlslSourceFolder, *.hlsl
+      Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath -HlslPath $Event.SourceEventArgs.FullPath } > $null
+   
+      Write-Host "Run with the '-Unregister' switch to turn off the file watcher."
+   }
 
-   Write-Host "Registering FileChanged event subscriber to watch '*.hlsl' in '$hlslSourceFolder'"
-   $fsw = New-Object System.IO.FileSystemWatcher $hlslSourceFolder, *.hlsl
-   Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath -HlslPath $Event.SourceEventArgs.FullPath } > $null
-
-   Write-Host "Run with the '-Unregister' switch to turn off the file watcher."
    exit 0
 }
 
