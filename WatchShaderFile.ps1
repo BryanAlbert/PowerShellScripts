@@ -12,13 +12,13 @@
 # look for the file with the greatest number suvix and use that for its purposes.
 # We copy these files to the Pending folder in this case.
 #
-# Since the fsc.exe hlsl compiler requires the Developer Command Prompt, the
-# CompileShaders.bat (which this script calls) will call VsDevCmd.bat batch to
-# create that environment, as necessary. Since this takes time, the -WatchHlsl
-# process launches the Developer PowerShell for VS 2019 and configures the file
-# watcher from there. When CompileShaders.bat is then run by the file watcher in
-# that Developer Powershell envrionment, it doesn't have to wait for that environment
-# to be configured and runs more quickly.
+# Since compiling hlsl files requires the Developer Command Prompt, CompileShaders.bat
+# (which this script calls) will call VsDevCmd.bat batch to create that environment
+# as necessary. Since that call takes time, the -WatchHlsl process launches the
+# "Developer PowerShell for VS 2019" and configures the file watcher from there.
+# When the file watcher then runs CompileShaders.bat in that Developer Powershell
+# envrionment, it doesn't have to wait for the VsDevCmd.bat to run and thus runs
+# more quickly.
 #
 # For changes to an hlsl file in the (hard-coded) Effects.UWP\Shaders folder, the
 # file watcher calls the script again with -HlslPath set to the path to the modified
@@ -27,7 +27,7 @@
 #
 # Note that if the source file is modified in Visual Studio, this script won't work
 # because VS doesn't actually modify the file (it deletes it and makes a new 
-# version?). Visual Studio Code does, though, so use that.
+# version?). Visual Studio Code does, though, so use that for editing.
 #
 # TODO: make it work with Visual Studio (watch for file creation?).
 
@@ -282,7 +282,7 @@ function CompileHlslFile($source)
          $process = Start-Process -PassThru -Wait $env:ComSpec "/C CompileShaders.bat $source" 
          if ($process.ExitCode -eq 0)
          {
-            # if the file is to be reloaded at runtime (named FragmentShader.bin), copy to the app's LocalState folder
+            # if the file can be reloaded at runtime (it's named FragmentShader.bin), copy it to the app's LocalState folder
             if ((Split-Path -Leaf $uwpShaderFilePath) -eq $targetFileName)
             {
                $folder = Split-Path -Parent $uwpShaderFilePath
@@ -351,6 +351,7 @@ if ($WatchHlsl)
 {
    if ($null -eq $env:WindowsSdkDir)
    {
+      # CompileShader.bat runs faster if it's run in the Developer environment, relaunch there
       Write-Host "Launching Developer PowerShell for VS 2019..."
       $command = "-NoExit &{Import-Module " +
          "`"`"`"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7" +
