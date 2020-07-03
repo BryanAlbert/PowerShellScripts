@@ -2,15 +2,24 @@
 # for UWP. It should be run from the folder containing the shader file(s) to watch.
 #
 # For changes to the (hard-coded) FragmentShader.fsh file, the file watcher calls
-# the script again with -FshSource $fshSourceFilename (the global: name). In this 
+# the script again with -FshSource $fshSourceFilename (the global: name). In this
 # case the script then copies the updated fsh file to the (hard-coded) Shaders folder
 # on the Android device. Since the device can't be mounted, we use a Shell.Application
 # COM object to find the target folder and perform the copy. Since the flags on said
 # COM object's CopyHere method don't work, we can't force the COM object to overwrite
 # the file without a confirmation dialog, so when necessary we give the target file a
 # unique name--the file name with a number appended. The consumer then needs to look
-# for the file with the greatest number suvix and use that for its purposes.
-# We copy these files to the device's Shaders/Pending folder in this case.
+# for the file with the greatest number suffix and use that for its purposes. We copy
+# these files to the device's Shaders/Pending folder in this case. Note that the
+# Shell.Application object can't tell when file structure changes are made on the
+# device, so even though the consumer may delete the temporary file, we won't know
+# that (so we'll make a new temporary file with the incremented number on the next
+# file change). If the Shaders or Pending folder is deleted altogether on the device,
+# copying the modified shader file one of these folders on the device will silently
+# fail. In order to delete the local copy of the unique file, we wait for the copy to
+# the device to finish; if the copy fails, we will time out waiting. In this case,
+# reattach the device to the computer to refresh the Shell.Application object's view
+# of the device's file structure.
 #
 # Since compiling hlsl files requires the Developer Command Prompt, CompileShaders.bat
 # (which this script calls) will call VsDevCmd.bat batch to create that environment
@@ -56,65 +65,6 @@ $hlslSourceFolder = $PWD.Path
 $powerShellPath = "C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe"
 
 
-function UnRegisterEventSubscriber
-{
-   Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object `
-   {
-      $command = $_.Action.Command
-      Write-Host "Watcher for $($_.SourceObject.Filter) in: $($_.SourceObject.Path)"
-      if ($command.Contains("`$scriptPath"))
-      {
-         Write-Host "Unregistering subscriber with command: $command"
-         $_ | Unregister-Event
-      }
-   }
-
-   $global:ShaderFileModifiedDate = $null;
-}
-
-function ShowStatus
-{
-   $subscriber = Get-EventSubscriber
-   if ($null -ne $subscriber)
-   {
-      Write-Host "Registered events for the FileChanged watcher:"
-      Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object `
-      {
-         $command = $_.Action.Command
-         Write-Host "Watching $($_.SourceObject.Filter) in: $($_.SourceObject.Path)"
-
-         if ($command.Contains("`$scriptPath"))
-         {
-            Write-Host "Action.Command is: $command"
-            if ($command.Contains("`$scriptPath")) { Write-Host "Script `$scriptPath: $scriptPath" }
-            if ($command.Contains("`$hlslSourceFolder")) { Write-Host "Source: `$hlslSourceFolder: $hlslSourceFolder" }
-            if ($command.Contains("`$fshSourceFileName")) { Write-Host "Source: `$fshSourceFileName: $fshSourceFileName" }
-            if ($command.Contains("`$fshTargetFolder")) { Write-Host "Target: `$fshTargetFolder: $fshTargetFolder" }
-         }
-
-         if ($_.Action.JobStateInfo.State -eq "Running" -and $_.Action.Output.Count -gt 0)
-         {
-            # useful for figuring out error conditions
-            Write-Host "Command is running, Output: $($_.Action.Output)"
-         }
-      }
-
-      if ($null -ne $ShaderFileModifiedDate)
-      {
-         $ShaderFileModifiedDate.Keys | ForEach-Object `
-         {
-            Write-Host "Current modified date for '$($_)': $($ShaderFileModifiedDate[$_])"
-         }
-      }
-   }
-   else
-   {
-      Write-Host "No event subscribers registered"
-      Write-Host "`nUse -WatchHlsl to monitor and compile (via CompileShader.bat) hlsl files in the current directory:`n$hlslSourceFolder"
-      Write-Host "`nUse -WatchFsh to monitor $fshSourceFileName, when modified, copies it to:`n$fshTargetFolder\Shaders`n"
-   }
-}
-
 function CheckModifiedDate($file, $date)
 {
    # maintain a global hash contianing the file path and modified date (since ModifyDate on the FolderItem doesn't work)
@@ -133,7 +83,7 @@ function CheckModifiedDate($file, $date)
    }
 
    $ShaderFileModifiedDate[$file] = $date
-   return $true
+   $true
 }
 
 function GetDirectory($here, $directory)
@@ -170,7 +120,116 @@ function GetUniqueSource($target)
    $counter++
    $tempFile = Join-Path $fshSourceFolderPath "$filename$counter$extension"
    Copy-Item $fshSourceFileName $tempFile
-   return $tempFile
+   $tempFile
+}
+
+function getTabletFilesFolder
+{
+   $target = (New-Object -ComObject Shell.Application).NameSpace(0x11)
+   foreach ($folder in $fshTargetFolder.Split("\\"))
+   {
+      $directory = $target.Items() | Where-Object { $_.Name -eq $folder }
+      if ($null -eq $directory)
+      {
+         "Error: folder '$folder' not found in '$fshTargetFolder'"
+         $target = $null
+         return
+      }
+      $target = $directory.GetFolder()
+   }
+
+   $target
+}
+
+function listFiles($target, $indent)
+{
+   if ($null -ne $target)
+   {
+      Write-Host "$indent$($target.Name)"
+      $indent += "   "
+      $target.GetFolder().Items() | ForEach-Object `
+      {
+         if ($_.IsFolder)
+         {
+            listFiles $_ $indent
+         }
+         else
+         {
+            Write-Host "$indent$($_.Name)"
+         }
+      }
+   }
+}
+
+function listTabletFiles
+{
+   Write-Host "fsh files in:`n$fshTargetFolder"
+   $target = getTabletFilesFolder
+   $target = $target.Items() | Where-Object { $_.Name -eq "Shaders" }
+   listFiles $target ""
+}
+
+function ShowStatus
+{
+   $subscriber = Get-EventSubscriber
+   if ($null -ne $subscriber)
+   {
+      Write-Host "Registered events for the FileChanged watcher:"
+      Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object `
+      {
+         $command = $_.Action.Command
+         Write-Host "Watching $($_.SourceObject.Filter) in: $($_.SourceObject.Path)"
+
+         if ($command.Contains("`$scriptPath"))
+         {
+            Write-Host "Action.Command is: $command"
+            if ($command.Contains("`$scriptPath")) { Write-Host "Script: `$scriptPath: $scriptPath" }
+            if ($command.Contains("`$hlslSourceFolder")) { Write-Host "Source: `$hlslSourceFolder: $hlslSourceFolder" }
+            if ($command.Contains("`$fshSourceFileName"))
+            {
+               Write-Host "Source: `$fshSourceFileName: $fshSourceFileName"
+               Write-Host "Target: `$fshTargetFolder: $fshTargetFolder"
+               listTabletFiles
+            }
+         }
+
+         if ($_.Action.JobStateInfo.State -eq "Running" -and $_.Action.Output.Count -gt 0)
+         {
+            # useful for figuring out error conditions
+            Write-Host "Command is running, Output: $($_.Action.Output)"
+         }
+      }
+
+      if ($null -ne $ShaderFileModifiedDate)
+      {
+         $ShaderFileModifiedDate.Keys | ForEach-Object `
+         {
+            Write-Host "Current modified date for '$($_)': $($ShaderFileModifiedDate[$_])"
+         }
+      }
+   }
+   else
+   {
+      Write-Host "No event subscribers registered"
+      Write-Host "`nUse -WatchHlsl to monitor and compile (via CompileShader.bat) hlsl files in the current directory:`n$hlslSourceFolder"
+      Write-Host "`nUse -WatchFsh to monitor $fshSourceFileName, when modified, copies it to:`n$fshTargetFolder\Shaders`n"
+   }
+}
+
+function UnRegisterEventSubscriber
+{
+   Get-EventSubscriber | Where-Object{ $_.SourceIdentifier -eq "FileChanged" } | ForEach-Object `
+   {
+      $command = $_.Action.Command
+      Write-Host "Unregistering watcher for $($_.SourceObject.Filter) in: $($_.SourceObject.Path)"
+      if ($command.Contains("`$scriptPath"))
+      {
+         Write-Host "Unregistering subscriber with command: $command"
+         $_ | Unregister-Event
+      }
+   }
+
+   $global:ShaderFileModifiedDate = $null
 }
 
 function CopyFshFile($source)
@@ -190,35 +249,23 @@ function CopyFshFile($source)
    }
 
    $modifiedDate = $file.ModifyDate
-
-   $target = (New-Object -ComObject Shell.Application).NameSpace(0x11)
-   foreach ($folder in $fshTargetFolder.Split("\\"))
-   {
-      $directory = $target.Items() | Where-Object { $_.Name -eq $folder }
-      if ($null -eq $directory)
-      {
-         "Error: folder '$folder' not found in '$fshTargetFolder'"
-         $target = $null
-         return
-      }
-      $target = $directory.GetFolder()
-   }
-
-   # create the Shaders folder as necessary
-   $target = GetDirectory $target "Shaders"
-   $fshTargetFolder = $fshTargetFolder + "\Shaders"
-
    if (!(CheckModifiedDate $source $modifiedDate))
    {
       return
    }
+
+   $target = getTabletFilesFolder
+
+   # create the Shaders folder as necessary
+   $target = GetDirectory $target "Shaders"
+   $fshTargetFolder = $fshTargetFolder + "\Shaders"
 
    $file = $target.Items() | Where-Object { $_.Name -eq $source }
    if ($null -ne $file)
    {
       # create the Pending folder if the target exists in Shaders
       $target = GetDirectory $target "Pending"
-      $fshTargetFolder += "\Pending"
+      $fshTargetFolder = Join-Path $fshTargetFolder "Pending"
 
       $file = $target.Items() | Where-Object { $_.Name -eq $source }
       if ($null -ne $file)
@@ -230,29 +277,28 @@ function CopyFshFile($source)
    }
 
    Write-Host "Copying '$source' to '$fshTargetFolder'"
-   $target.CopyHere($source)
+   $source = Resolve-Path $source
+   $target.CopyHere($source.Path)
    if ($null -ne $uniqueSource)
    {
       # wait for the copy to be finished, then delete the temp file
-      $start = Get-Date
-      while($true)
+      $filename = Split-Path $uniqueSource -Leaf
+      for ($try = 1; $try -le 10; $try++)
       {
-         $target.Items() | ForEach-Object `
+         $target.Items() | Where-Object { $_.Name -eq $fileName } | ForEach-Object `
          {
-            if ($_.Name -eq (Split-Path $uniqueSource -Leaf))
-            {
-               break;
-            }
+            Remove-Item $uniqueSource
+            break
          }
 
-         if (((Get-Date) - $start).TotalMilliSeconds -gt 500)
-         {
-            Write-Host "Waiting for copy to finish..."
-            $start = Get-Date
-         }
+         Write-Host "Waiting $try of 10 for copy to finish..."
+         Start-Sleep -Seconds 1
       }
 
-      Remove-Item $uniqueSource
+      if ($try -gt 10)
+      {
+         Write-Host "Failed to detect that the target file exists. Reconnect the device and try again?"
+      }
    }
 
    Write-Host "$source modified date: $modifiedDate"
@@ -314,16 +360,16 @@ if ($Unregister)
    exit 0
 }
 
+if ($null -ne $FshSource)
+{
+   CopyFshFile $FshSource
+   exit 0
+}
+
 if ($null -ne $HlslPath)
 {
    CompileHlslFile $HlslPath
    Write-Host "`nTo exit file watching, type: exit <Enter>"
-   exit 0
-}
-
-if ($null -ne $FshSource)
-{
-   CopyFshFile $FshSource
    exit 0
 }
 
@@ -334,8 +380,8 @@ if ($WatchFsh)
    Write-Host "Registering FileChanged event subscriber to watch '$fshSourceFileName' in:`n$fshSourceFolderPath"
    Write-Host "and when it changes run"
    Write-Host "`$scriptPath -FshSource `$fshSourceFileName"
-   $fsw = New-Object System.IO.FileSystemWatcher $fshSourceFolderPath, $fshSourceFileName
-   Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath -FshSource $fshSourceFileName } > $null
+   $watcher = New-Object System.IO.FileSystemWatcher $fshSourceFolderPath, $fshSourceFileName
+   Register-ObjectEvent $watcher Changed -SourceIdentifier FileChanged -Action { &$scriptPath -FshSource $fshSourceFileName } > $null
 
    Write-Host "Run with the '-Unregister' switch to turn off the file watcher."
    exit 0
@@ -361,8 +407,8 @@ if ($WatchHlsl)
       UnRegisterEventSubscriber
    
       Write-Host "`nRegistering FileChanged event subscriber to watch '*.hlsl' in:`n$hlslSourceFolder"
-      $fsw = New-Object System.IO.FileSystemWatcher $hlslSourceFolder, *.hlsl
-      Register-ObjectEvent $fsw Changed -SourceIdentifier FileChanged -Action { &$scriptPath -HlslPath $Event.SourceEventArgs.FullPath } > $null
+      $watcher = New-Object System.IO.FileSystemWatcher $hlslSourceFolder, *.hlsl
+      Register-ObjectEvent $watcher Changed -SourceIdentifier FileChanged -Action { &$scriptPath -HlslPath $Event.SourceEventArgs.FullPath } > $null
    
       Write-Host "Run with the '-Unregister' switch to turn off the file watcher."
    }
