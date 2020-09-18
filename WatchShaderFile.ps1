@@ -1,8 +1,8 @@
 # This script watches and processes shader files, either fsh for Android or hlsl
 # for UWP. Run it from the folder containing the shader file(s) to watch.
 #
-# For changes to the (default) Android FragmentShader.fsh file, the file watcher
-# callsthe script again with -FshSource $fshSourceFilename (the global: name).
+# When the file watcher detects changes to the Android FragmentShader.fsh file, 
+# it calls the script again with -FshSource $fshShaderFileName (the global: name).
 # With this command line the script copies the updated fsh file to the (hard-coded)
 # Shaders folder on the Android device. Since the device can't be mounted, we use
 # a Shell.Application COM object to find the target folder and perform the copy.
@@ -34,10 +34,10 @@
 # watcher calls the script again with -HlslPath set to the path to the modified
 # hlsl file. In this case the script calls CompileShader.bat with the file name of
 # the file to compile. The script can be configured to copy the compiled bin file
-# to the hard-coded (and finicky) deploy path $uwpShaderFileFolderdeploy by
-# specifying the file name with the -CopyFile parameter when the file watcher is
-# launched, e.g. WatchShaderFile.ps1 -WatchHlsl -CopyFile BruceFilter.bin
-# This filename is saved in the global:$uwpShaderFileName variable.
+# to the hard-coded (and finicky) deploy path $uwpTargetFolderdeploy by specifying
+# the file name with the -CopyFile parameter when the file watcher is launched,
+# e.g. WatchShaderFile.ps1 -WatchHlsl -CopyFile BruceFilter.bin This filename is
+# saved in the global:$uwpShaderFileName variable.
 #
 # Note that if the source file is modified in Visual Studio, this script won't work
 # because VS doesn't actually modify the file (it deletes it and makes a new 
@@ -54,19 +54,8 @@ param([switch] $WatchFsh, [switch] $WatchHlsl, [switch] $Status, [switch] $Unreg
 $global:fshTargetFolder = "Bryan's Galaxy Tab S3\Card\Android\data\com.nfidev.InstantPhotoBooth4\files"
 
 # the path to the shader file in the UWP app's LocalState folders, update with this with your own path
-$uwpShaderFileFolder = "C:\Users\bryan\AppData\Local\Packages\4119f474-6e52-4081-b0bd-f14959d84c01_zy7gk4k2v4s0e" +
+$uwpTargetFolder = "C:\Users\bryan\AppData\Local\Packages\4119f474-6e52-4081-b0bd-f14959d84c01_zy7gk4k2v4s0e" +
 "\LocalState\ShaderFiles"
-
-# the shader file to copy to $uwpShaderFileFolder, default to FragmentShader.bin, otherwise specified on the 
-# command line as $CopyFile
-if ($null -eq $uwpShaderFileName)
-{
-   $global:uwpShaderFileName = "FragmentShader.bin"
-}
-
-# the source fsh file to watch, update with this with your own filename, keep in the scope of our
-# caller (global) since the event action command references it by name
-$global:fshSourceFileName = "FragmentShader.fsh"
 
 # keep in the scope of our caller (global) since the event action command references it by name
 $global:scriptPath = $MyInvocation.MyCommand.Definition
@@ -114,8 +103,8 @@ function GetDirectory($here, $directory)
 
 function GetUniqueSource($target)
 {
-   $fileName = [System.IO.Path]::GetFileNameWithoutExtension($fshSourceFileName)
-   $extension = [System.IO.Path]::GetExtension($fshSourceFileName)
+   $fileName = [System.IO.Path]::GetFileNameWithoutExtension($fshShaderFileName)
+   $extension = [System.IO.Path]::GetExtension($fshShaderFileName)
    [int] $counter = 0
    $target.Items() | ForEach-Object `
    {
@@ -131,11 +120,11 @@ function GetUniqueSource($target)
 
    $counter++
    $tempFile = Join-Path $fshSourceFolderPath "$filename$counter$extension"
-   Copy-Item $fshSourceFileName $tempFile
+   Copy-Item $fshShaderFileName $tempFile
    $tempFile
 }
 
-function getTabletFilesFolder
+function GetTabletFilesFolder
 {
    $target = (New-Object -ComObject Shell.Application).NameSpace(0x11)
    foreach ($folder in $fshTargetFolder.Split("\\"))
@@ -153,7 +142,7 @@ function getTabletFilesFolder
    $target
 }
 
-function listFiles($target, $indent)
+function ListFiles($target, $indent)
 {
    if ($null -ne $target)
    {
@@ -163,7 +152,7 @@ function listFiles($target, $indent)
       {
          if ($_.IsFolder)
          {
-            listFiles $_ $indent
+            ListFiles $_ $indent
          }
          else
          {
@@ -173,12 +162,12 @@ function listFiles($target, $indent)
    }
 }
 
-function listTabletFiles
+function ListTabletFiles
 {
    Write-Host "fsh files in:`n$fshTargetFolder"
-   $target = getTabletFilesFolder
+   $target = GetTabletFilesFolder
    $target = $target.Items() | Where-Object { $_.Name -eq "Shaders" }
-   listFiles $target ""
+   ListFiles $target ""
 }
 
 function ShowStatus
@@ -197,15 +186,16 @@ function ShowStatus
             Write-Host "Action.Command is: $command"
             if ($command.Contains("`$scriptPath")) { Write-Host "Script: `$scriptPath: $scriptPath" }
             if ($command.Contains("`$hlslSourceFolder")) { Write-Host "Source: `$hlslSourceFolder: $hlslSourceFolder" }
-            if ($command.Contains("`$fshSourceFileName"))
+            if ($command.Contains("`$fshShaderFileName"))
             {
-               Write-Host "Source: `$fshSourceFileName: $fshSourceFileName"
+               Write-Host "Source: `$fshShaderFileName: $fshShaderFileName"
                Write-Host "Target: `$fshTargetFolder: $fshTargetFolder"
-               listTabletFiles
+               ListTabletFiles
             }
          }
 
-         if ($null -ne $uwpShaderFileName) { Write-Host "When $uwpShaderFileName changes, it will be copied to $uwpShaderFileFolder" }
+         if ($null -ne $uwpShaderFileName) { Write-Host "When $uwpShaderFileName changes, it will be copied to $uwpTargetFolder" }
+         if ($null -ne $fshShaderFileName) { Write-Host "When $fshShaderFileName changes, it will be copied to $fshTargetFolder" }
 
          if ($_.Action.JobStateInfo.State -eq "Running" -and $_.Action.Output.Count -gt 0)
          {
@@ -227,8 +217,10 @@ function ShowStatus
       Write-Host "No event subscribers registered"
       Write-Host "`nUse -WatchHlsl to monitor and compile (via CompileShader.bat) hlsl files in the current directory:`n$hlslSourceFolder"
       Write-Host "Add the -CopyFile file name to copy, when it changes, the specified file (defaults to FragmentShader.bin) to:"
-      Write-Host "$uwpShaderFileFolder"
-      Write-Host "`nUse -WatchFsh to monitor $fshSourceFileName, when modified, copies it to:`n$fshTargetFolder\Shaders`n"
+      Write-Host "$uwpTargetFolder"
+      Write-Host "`nUse -WatchFsh to monitor $fshShaderFileName, when modified, copies it to:`n$fshTargetFolder\Shaders"
+      Write-Host "Add the -CopyFile file name to copy, when it changes, the specified file (defaults to FragmentShader.fsh) to:"
+      Write-Host "$fshTargetFolder`n"
    }
 }
 
@@ -248,6 +240,7 @@ function UnRegisterEventSubscriber
    # reset global state variables
    $ShaderFileModifiedDate = $null
    if ($null -ne $uwpShaderFileName) { Remove-Variable -Scope global uwpShaderFileName }
+   if ($null -ne $fshShaderFileName) { Remove-Variable -Scope global fshShaderFileName }
 }
 
 function CopyFshFile($source)
@@ -272,7 +265,7 @@ function CopyFshFile($source)
       return
    }
 
-   $target = getTabletFilesFolder
+   $target = GetTabletFilesFolder
 
    # create the Shaders folder as necessary
    $target = GetDirectory $target "Shaders"
@@ -343,12 +336,12 @@ function CompileHlslFile($source)
             # if specified with $CopyFile (defaults to FragmentShader.bin), copy it to the app's LocalState folder
             if ($uwpShaderFileName -eq $targetFileName)
             {
-               if (!(Test-Path $uwpShaderFileFolder))
+               if (!(Test-Path $uwpTargetFolder))
                {
-                  mkdir $uwpShaderFileFolder
+                  mkdir $uwpTargetFolder
                }
 
-               $target = Join-Path $uwpShaderFileFolder $uwpShaderFileName
+               $target = Join-Path $uwpTargetFolder $uwpShaderFileName
                Write-Host "Copying '$targetFileName' to: $target"
                Copy-Item $targetFileName $target
             }
@@ -382,11 +375,23 @@ if ($WatchFsh)
 {
    UnRegisterEventSubscriber
 
-   Write-Host "Registering FileChanged event subscriber to watch '$fshSourceFileName' in:`n$fshSourceFolderPath"
+   if ($null -ne $CopyFile)
+   {
+      # track the file to copy to the device, defaults to FragmentShader.fsh
+      $CopyFile = $CopyFile -replace "\.\\" 
+      Write-Host "Will copy $CopyFile to $fshTargetFolder"
+      $global:fshShaderFileName = $CopyFile
+   }
+   else
+   {
+      $global:fshShaderFileName = "FragmentShader.fsh"
+   }
+
+   Write-Host "Registering FileChanged event subscriber to watch '$fshShaderFileName' in:`n$fshSourceFolderPath"
    Write-Host "and when it changes run"
-   Write-Host "`$scriptPath -FshSource `$fshSourceFileName"
-   $watcher = New-Object System.IO.FileSystemWatcher $fshSourceFolderPath, $fshSourceFileName
-   Register-ObjectEvent $watcher Changed -SourceIdentifier FileChanged -Action { &$scriptPath -FshSource $fshSourceFileName } > $null
+   Write-Host "`$scriptPath -FshSource `$fshShaderFileName"
+   $watcher = New-Object System.IO.FileSystemWatcher $fshSourceFolderPath, $fshShaderFileName
+   Register-ObjectEvent $watcher Changed -SourceIdentifier FileChanged -Action { &$scriptPath -FshSource $fshShaderFileName } > $null
 
    Write-Host "Run with the '-Unregister' switch to turn off the file watcher."
    exit 0
@@ -406,8 +411,12 @@ if ($WatchHlsl)
       {
          # track the file to copy to the deployment folder, defaults to FragmentShader.hlsl
          $CopyFile = $CopyFile -replace "\.\\" 
-         Write-Host "Will copy $CopyFile to $uwpShaderFileFolder"
+         Write-Host "Will copy $CopyFile to $uwpTargetFolder"
          $global:uwpShaderFileName = $CopyFile
+      }
+      else
+      {
+         $global:uwpShaderFileName = "FragmentShader.bin"
       }
    
       # CompileShader.bat runs faster if it's run in the Developer environment, relaunch there
@@ -428,7 +437,7 @@ if ($WatchHlsl)
       if ($null -ne $CopyFile)
       {
          # track the file to copy to the deployment folder, defaults to FragmentShader.hlsl
-         Write-Host "Will copy $CopyFile to $uwpShaderFileFolder"
+         Write-Host "Will copy $CopyFile to $uwpTargetFolder"
          $global:uwpShaderFileName = $CopyFile
       }
 
@@ -455,7 +464,7 @@ if ($false)
    Write-Host "(Hard-coded to test CompileHlslFile code)"
    CompileHlslFile C:\Users\bryan\Source\repos\InstantPhotoBooth4\Effects.UWP\Shaders\FragmentShader.hlsl
 #   Write-Host "(Hard-coded to test CompileHlslFile code)"
-#   CopyFshFile $fshSourceFileName
+#   CopyFshFile $fshShaderFileName
    exit 0
 }
 
