@@ -440,6 +440,10 @@ if ($WatchHlsl)
          Write-Host "Will copy $CopyFile to $uwpTargetFolder"
          $global:uwpShaderFileName = $CopyFile
       }
+      else
+      {
+         $global:uwpShaderFileName = "FragmentShader.bin"
+      }
 
       Write-Host "`nRegistering FileChanged event subscriber to watch '*.hlsl' in:`n$hlslSourceFolder"
       $watcher = New-Object System.IO.FileSystemWatcher $hlslSourceFolder, *.hlsl
