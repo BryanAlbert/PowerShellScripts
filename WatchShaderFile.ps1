@@ -410,7 +410,7 @@ if ($WatchHlsl)
       if ($null -ne $CopyFile)
       {
          # track the file to copy to the deployment folder, defaults to FragmentShader.hlsl
-         $CopyFile = $CopyFile -replace "\.\\" 
+         $CopyFile = $CopyFile -replace "\.\\" -replace "\.hlsl", ".bin"
          Write-Host "Will copy $CopyFile to $uwpTargetFolder"
          $global:uwpShaderFileName = $CopyFile
       }
