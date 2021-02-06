@@ -11,10 +11,12 @@
 # With -update, if the file is a .class file, we first compile it into the associated 
 # .java file then update the classes.jar file with that, then update the aar file with that.
 
-param([switch] $List, [switch] $Extract, [switch] $Update, [string] $Path)
+param([switch] $List, [switch] $Extract, [switch] $Update, [switch] $Cleanup, [switch] $Build, [string] $Path)
+
 
 $javaPath = "C:\Program Files\Java\jdk1.8.0_161\bin\"
 $silPath = "C:\Program Files (x86)\SIL\Scripture App Builder"
+$sabProject = "Calculator"
 $aarFile = "lib/app-android-common.aar"
 $jarFile = "classes.jar"
 
@@ -71,8 +73,56 @@ function ExtractFile
 
 function UpdateFile
 {
-   Write-Host "Updating $Path"
+   $libFolder = Split-Path $aarFile
+   Push-Location ($libFolder)
 
+   if (!(Test-Path $Path)) {
+      Write-Host "Error: $Path not found relative to: $(Join-Path $silPath $libFolder)."
+      Pop-Location
+      Pop-Location
+      exit 1
+   }
+
+   $source = Split-Path $aarFile -Leaf
+   if (jar.exe tf $source $Path -eq $Path) {
+      Write-Host "Updating $Path in $aarFile"
+      jar uf $source $Path
+   } else {
+      # TODO: check in the jar file
+      Write-Host "Error: $Path not found in $source"
+   }
+   Pop-Location
+}
+
+function Build
+{
+   Write-Host "Building apk..."
+   .\sab.bat -Load $sabProject -Build
+}
+
+function Cleanup {
+   Push-Location (Split-Path $aarFile)
+   $source = Split-Path $aarFile -Leaf
+   foreach ($file in (jar.exe tf $source)) {
+      if ((Test-Path $file) -and ($file[$file.Length - 1] -ne "/")) {
+         Write-Host "Deleting file: $file"
+         Remove-Item $file
+         DeleteParentFolder $file
+      }
+   }
+
+   Pop-Location
+}
+
+function DeleteParentFolder {
+   param ($file)
+
+   $parent = Split-Path $file -Parent
+   if ((Get-ChildItem $parent).Count -eq 0) {
+      Write-Host "Deleting folder $parent"
+      Remove-Item $parent
+      DeleteParentFolder $parent
+   }
 }
 
 
@@ -80,12 +130,28 @@ function UpdateFile
 # $List = $true
 # $Extract = $true
 # $Path = "bruce.xml"
+# $Update = $true
 # $Path = "res/layout/fragment_calculator.xml"
 # $Path = "org/sil/app/android/common/fragment/CalculatorFragment.class"
+# $Build = $true
+# $Cleanup = $true
 
 
 if (($Extract -or $Update) -and $Path.Length -eq 0) {
    Write-Host "Error: Path must be specified with Extract or Update switch."
+   Pop-Location
+   exit 1
+}
+
+if (!(Test-Path $aarFile)) {
+   Write-Host "Error: file $aarFile is missing."
+   Pop-Location
+   exit 1
+}
+
+if ($Path -eq (Split-Path $aarFile -Leaf)) {
+   Write-Host "Error: Don't try to extract $aarFile"
+   Pop-Location
    exit 1
 }
 
@@ -97,6 +163,12 @@ elseif ($Extract) {
 }
 elseif ($Update) {
    UpdateFile
+}
+elseif ($Build) {
+   Build
+}
+elseif ($Cleanup) {
+   Cleanup
 }
 
 Pop-Location
