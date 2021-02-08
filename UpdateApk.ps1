@@ -65,7 +65,9 @@ function ExtractFile
          Write-Host "Error: path not found: $Path"
       }
 
-      Remove-Item $jarFile
+      if ($Path -ne $jarFile) {
+         Remove-Item $jarFile
+      }
    }
 
    Pop-Location
@@ -86,11 +88,21 @@ function UpdateFile
    $source = Split-Path $aarFile -Leaf
    if (jar.exe tf $source $Path -eq $Path) {
       Write-Host "Updating $Path in $aarFile"
-      jar uf $source $Path
+      jar.exe uf $source $Path
    } else {
-      # TODO: check in the jar file
-      Write-Host "Error: $Path not found in $source"
+      jar.exe xf $source $jarFile
+      if (jar.exe tf $jarFile $Path -eq $Path) {
+         Write-Host "Updating $Path in $jarFile"
+         jar.exe uf $jarFile $Path
+         Write-Host "Updating $jarFile in $aarFile"
+         jar.exe uf $source $jarFile
+      } else {
+         Write-Host "Error: $Path not found."
+      }
+
+      Remove-Item $jarFile
    }
+
    Pop-Location
 }
 
@@ -107,26 +119,36 @@ function Cleanup {
       if ((Test-Path $file) -and ($file[$file.Length - 1] -ne "/")) {
          Write-Host "Deleting file: $file"
          Remove-Item $file
-         DeleteParentFolder $file
+         DeleteEmptyParentFolder $file
       }
    }
 
+   jar.exe xf $source $jarFile
+   foreach ($file in (jar.exe tf $jarFile)) {
+      if ((Test-Path $file) -and ($file[$file.Length - 1] -ne "/")) {
+         Write-Host "Deleting file: $file"
+         Remove-Item $file
+         DeleteEmptyParentFolder $file
+      }
+   }
+
+   Remove-Item $jarFile
    Pop-Location
 }
 
-function DeleteParentFolder {
+function DeleteEmptyParentFolder {
    param ($file)
 
    $parent = Split-Path $file -Parent
    if ((Get-ChildItem $parent).Count -eq 0) {
-      Write-Host "Deleting folder $parent"
+      Write-Host "Deleting empty folder $parent"
       Remove-Item $parent
-      DeleteParentFolder $parent
+      DeleteEmptyParentFolder $parent
    }
 }
 
 
-# testing in Visual Studio Code (could use a launch.json file instead...)
+# testing in Visual Studio Code (use the .vscode\launch.json file instead...)
 # $List = $true
 # $Extract = $true
 # $Path = "bruce.xml"

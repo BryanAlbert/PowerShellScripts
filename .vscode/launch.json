@@ -10,10 +10,11 @@
          "request": "launch",
          "script": "${file}",
          "cwd": "${file}",
-         "args": ["-WatchHlsl -CopyFile .\\DotScreen.hlsl"]
+         "args": ["-Build"]
       }
    ]
 }
 
+// "args": ["-WatchHlsl -CopyFile .\\DotScreen.hlsl"]
 // "args": ["-WatchHlsl -CopyFile DotScreen.bin"]
 // "args": ["-HlslPath C:\\Users\\bryan\\Source\\repos\\InstantPhotoBooth4\\Effects.UWP\\Shaders\\DotScreen.hlsl"]
