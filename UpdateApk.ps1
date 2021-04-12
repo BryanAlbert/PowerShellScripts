@@ -16,6 +16,7 @@ param([switch] $List, [switch] $Extract, [switch] $Update, [switch] $Cleanup, [s
 
 $javaPath = "C:\Program Files\Java\jdk1.8.0_161\bin\"
 $silPath = "C:\Program Files (x86)\SIL\Scripture App Builder"
+$silPath = "C:\Users\bryan\Source\repos\BTJCalculator"
 $sabProject = "Calculator"
 $aarFile = "lib/app-android-common.aar"
 $jarFile = "classes.jar"
