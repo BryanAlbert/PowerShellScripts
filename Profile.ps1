@@ -1,4 +1,7 @@
-# add to the PATH environment variable C:\Util\Scripts path for PowerShell scripts
+# So we know PowerShell is loading this file...
+"Hello Bryan."
+
+# add to the PATH environment variable C:\Util\Scripts path for PowerShell scripts (e.g. time card stuff)
 $env:Path += ";C:\Util;C:\Util\PowerShellScripts"
 
 # some development tools
@@ -18,3 +21,5 @@ Set-Alias cal C:\Util\Calendar.exe
 Set-Alias rpn C:\Util\ConsoleRpn.exe
 Set-Alias bike C:\Util\BikeComputer.exe
 Set-Alias miacipher C:\Util\MiaCipher.exe
+
+function utc { [DateTime]::UtcNow.ToString("s") }

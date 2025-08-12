@@ -1,23 +1,23 @@
 # Given a number of hours needed for the week, computes hours needed by the end of the day
 # to make that rate. 
 
-function QuitTime([switch] $ProjectBTJ, [string] $Project, [timespan] $WeekHours, [timespan] $AddHours)
+function QuitTime([switch] $ProjectRR, [string] $Project, [timespan] $WeekHours, [timespan] $AddHours)
 {
-	if ($ProjectBTJ)
+	if ($ProjectRR)
 	{
-		$Project = "BTJ"
+		$Project = "RR"
 	}
 
 	if ($Project.Length -gt 0)
 	{
-		if ($Project -eq "GI" -and $WeekHours -eq $null)
+		if ($Project -eq "GI" -and $null -eq $WeekHours)
 		{
 			$WeekHours = [TimeSpan]::FromHours(21.0);
 			Write-Host "Project GI default week hours is $weekHours"
 		}
 	}
 
-	if ($WeekHours -eq $null)
+	if ($null -eq $WeekHours)
 	{
 		$WeekHours = [timespan]::FromHours(40.0)
 	}
@@ -77,7 +77,7 @@ function AddTimeToWeek([string] $EndDate, [string] $AddTimePerDay, [string] $Add
 	
 	do
 	{
-		$day = [timespan] (timeclock.ps1 -WorkingDate $date -Project GI)
+		$day = [timespan] (timeclock.ps1 -WorkingDate $date -Project RR)
 		if ($add -gt 0 -and $day -gt 0)
 		{
 			$grossHours += $day
@@ -140,11 +140,22 @@ function FormatWeekHours([timespan] $Time)
 # some handy aliases
 Set-Alias tit timeclock.ps1
 
+# Global Imagination 
 function titgifunction { timeclock.ps1 -Project GI }
+
+# Back to Jerusalem
 function titbtjfunction { timeclock.ps1 -Project BTJ }
+
+# Albertnet Archiver
+function titanfunction { timeclock.ps1 -Project AN }
+
+# RabbitRoom
+function titrrfunction { timeclock.ps1 -Project RR}
 
 Set-Alias titgi titgifunction
 Set-Alias titbtj titbtjfunction
+Set-Alias titan titanfunction
+Set-Alias titrr titrrfunction
 
 Set-Alias ReportWeek AddTimeToWeek
 

@@ -1,13 +1,13 @@
 # TODO: Add output for when clocked out: the last entry until now showing current off time (with the message).
 
-param([switch] $Punch, [switch] $ProjectBTJ, [switch] $Week, [switch] $Edit, [string] $Data, [string] $Comment, [datetime] $WorkingDate, [string] $Project, [datetime] $PunchTime)
+param([switch] $Punch, [switch] $ProjectRR, [switch] $Week, [switch] $Edit, [string] $Data, [string] $Comment, [datetime] $WorkingDate, [string] $Project, [datetime] $PunchTime)
 
-if ($ProjectBTJ)
+if ($ProjectRR)
 {
-	$Project = "BTJ"
+	$Project = "RR"
 }
 
-$cardPath = "C:\Users\bryan\Documents\TimeCards"
+$cardPath = "C:\Users\bryan\OneDrive\Documents\TimeCards"
 
 function Display($span, $startTime, $stopTime, $color, $comment)
 {
